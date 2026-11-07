@@ -134,8 +134,8 @@ function startFeed(){
  connector=new NexusIqConnector({email:process.env.IQ_IDENTIFIER,password:process.env.IQ_PASSWORD});
  connector.on('connected',()=>{state.connected=true;state.lastConnectorError=null;state.message='Autenticado na IQ Option; aguardando candles válidos';console.log('[IQ] authenticated/profile received');});
  connector.on('disconnected',()=>{state.connected=false;state.message='Conexão encerrada';console.log('[IQ] websocket disconnected');});
- connector.on('reconnecting',x=>{state.connected=false;state.message='Reconectando em '+x.delay+'ms';});
- connector.on('error',e=>{state.connected=false;state.lastConnectorError=String(e?.message||e).slice(0,240);state.message='Falha no conector; verifique autenticação, 2FA e protocolo';console.error('[IQ] connector error:',state.lastConnectorError);});
+ connector.on('reconnecting',x=>{state.connected=false;state.message='Reconectando em '+x.delay+'ms'+(state.lastConnectorError?' · '+state.lastConnectorError:'');});
+ connector.on('error',e=>{state.connected=false;state.lastConnectorError=String(e?.message||e).slice(0,240);state.message=state.lastConnectorError;console.error('[IQ] connector error:',state.lastConnectorError);});
  connector.on('protocolError',e=>{state.protocolErrors++;state.lastConnectorError=String(e?.message||e).slice(0,240);console.error('[IQ] protocol error:',state.lastConnectorError);});
  connector.on('packet',p=>{state.lastPacketAt=new Date().toISOString();});
  connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId,isOtc:a.isOtc===true||/-OTC$/i.test(a.asset)||/\\bOTC\\b/i.test(a.asset),modalities:a.modalities||[],productStatus:a.productStatus||{}}));state.lastAssetUpdateAt=new Date().toISOString();state.message='Catálogo recebido; carregando dados de todos os ativos habilitados';console.log('[IQ] assets received:',state.assets.length);});
