@@ -22,43 +22,29 @@ class NexusIqConnector extends EventEmitter {
   }
 
   async login() {
-    const attempts = [
-      { url: 'https://api.iqoption.com/v2/login', fields: { email: this.email, password: this.password } },
-      { url: 'https://auth.iqoption.com/api/v2/login', fields: { identifier: this.email, password: this.password } }
-    ];
-    let lastError = null;
-    for (const attempt of attempts) {
-      try {
-        const response = await fetch(attempt.url, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/x-www-form-urlencoded',
-            accept: 'application/json',
-            origin: 'https://iqoption.com',
-            referer: 'https://iqoption.com/'
-          },
-          body: new URLSearchParams(attempt.fields),
-          signal: AbortSignal.timeout(12000)
-        });
-        const data = await response.json().catch(() => ({}));
-        const ssid = data.ssid || data?.data?.ssid || data?.result?.ssid ||
-          response.headers.get('ssid') || response.headers.get('ssid-token');
-        if (response.ok && ssid) return String(ssid);
-        lastError = new Error('IQ login at ' + new URL(attempt.url).host + ' returned HTTP ' + response.status +
-          (data?.message ? ': ' + String(data.message).slice(0, 120) : ''));
-        if (response.status >= 400 && response.status < 500) break;
-      } catch (error) {
-        lastError = new Error('IQ login at ' + new URL(attempt.url).host + ' failed: ' + String(error?.cause?.code || error?.message || error));
-      }
-    }
-    throw lastError || new Error('IQ Option login failed');
+    const body = new URLSearchParams({ identifier: this.email, password: this.password });
+    const response = await fetch('https://auth.iqoption.com/api/v2/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        accept: 'application/json',
+        origin: 'https://iqoption.com',
+        referer: 'https://iqoption.com/'
+      },
+      body
+    });
+    if (!response.ok) throw new Error('IQ Option authentication failed (HTTP ' + response.status + ')');
+    const data = await response.json();
+    const ssid = data.ssid || data?.data?.ssid || data?.result?.ssid;
+    if (!ssid) throw new Error('IQ Option did not return an SSID; login may require 2FA or a supported login flow');
+    return String(ssid);
   }
 
   async connect() {
     if (this.stopped) return;
     try {
       this.ssid = await this.login();
-      const ws = new WebSocket('wss://ws.iqoption.com/echo/websocket', {
+      const ws = new WebSocket('wss://iqoption.com/echo/websocket', {
         headers: { Origin: 'https://iqoption.com' },
         handshakeTimeout: 15000
       });
