@@ -22,18 +22,12 @@
 
 <section class="grid">
 <div class="card"><div class="label">FEED DE MERCADO</div><div class="value" id="feedStatus">Verificando</div><div class="sub" id="feedMessage">Conferindo conexão com a fonte</div></div>
-<div class="card"><div class="label">MERCADO ABERTO</div><div class="value" id="openCount">0</div><div class="sub">Ativos classificados como regulares</div></div>
+<div class="card"><div class="label">MERCADO ABERTO</div><div class="value" id="openCount">0</div><div class="sub">Disponíveis pela corretora agora</div></div>
 <div class="card"><div class="label">MERCADO OTC</div><div class="value" id="otcCount">0</div><div class="sub">Ativos identificados como OTC</div></div>
 <div class="card"><div class="label">BINÁRIAS / DIGITAIS</div><div class="value"><span id="binaryCount">0</span> / <span id="digitalCount">0</span></div><div class="sub">Ativos identificados por modalidade</div></div><div class="card"><div class="label">CANDLES RECEBIDOS</div><div class="value" id="candleCount">0</div><div class="sub">Histórico + atualizações</div></div>
 <div class="card wide"><h2>Estado do sistema</h2><div class="status"><span class="dot" id="statusDot"></span><span id="status">Verificando servidor…</span></div><p class="sub">Conexão somente leitura. Nenhuma ordem é executada.</p></div>
 <div class="card wide"><h2>Motor de análise</h2><div class="value" style="font-size:18px">Aguardando candles válidos</div><p class="sub">CFI · SMC · estrutura · liquidez · Order Blocks</p></div>
 </section>
-<section class="section">
-<h2>Ativos disponíveis · mercado aberto</h2>
-<div class="marketGrid assetsGrid">
-<div class="marketCard"><div class="marketHead"><strong>Mercado aberto</strong><span class="tag">OPEN</span></div><table class="table"><thead><tr><th>ATIVO</th><th>MODALIDADE</th><th>ID</th></tr></thead><tbody id="openAssets"><tr><td class="empty" colspan="2">Aguardando ativos…</td></tr></tbody></table></div>
-
-</div></section>
 <section class="section"><h2>Histórico de mercado</h2><div class="marketCard"><p class="sub">Candles recebidos da IQ Option são armazenados no volume persistente do servidor. Consulte por dia (horário de Brasília) e modalidade de registro.</p><div class="historyTools"><label>DATA<input type="date" id="historyDate"></label><label>TIPO<select id="historyType"><option value="all">Todos</option><option value="candle">Candles</option><option value="signal">Sinais</option></select></label><label>ATIVO (opcional)<input id="historyAsset" placeholder="Ex.: EURUSD"></label><button id="historySearch">Consultar</button></div><div id="historyMeta" class="historyMeta">Selecione uma data para consultar.</div><div style="overflow:auto"><table class="table"><thead><tr><th>HORÁRIO (BRT)</th><th>TIPO</th><th>ATIVO</th><th>PERÍODO</th><th>DETALHES</th></tr></thead><tbody id="historyRows"><tr><td class="empty" colspan="5">Nenhuma consulta realizada.</td></tr></tbody></table></div></div></section>
 <div class="notice"><strong>Classificação:</strong> OTC é identificado pelo metadado do ativo ou pelo sufixo/nome OTC. Ativos sem marcação OTC são agrupados como regulares; isso não garante que estejam negociáveis neste instante. A modalidade só é exibida quando identificada no catálogo. A disponibilidade depende do horário e da corretora. Sinais permanecem vazios até o motor técnico ser implementado e validado com dados reais.</div>
 <footer class="footer"><span>ATLAS AI · MARKET TERMINAL</span><span>READ-ONLY · NO ORDER EXECUTION</span></footer>
