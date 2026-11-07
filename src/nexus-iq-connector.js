@@ -265,7 +265,8 @@ class NexusIqConnector extends EventEmitter {
 
   reconnect() {
     if (this.stopped) return;
-    const base = Math.min(60000, 5000 * (2 ** Math.min(this.retry++, 4)));\n    const delay = Math.round(base * (0.85 + Math.random() * 0.3));
+    const base = Math.min(60000, 5000 * (2 ** Math.min(this.retry++, 4)));
+    const delay = Math.round(base * (0.85 + Math.random() * 0.3));
     this.emit('reconnecting', { delay });
     setTimeout(() => { if (!this.stopped) this.connect(); }, delay);
   }
