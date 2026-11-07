@@ -15,6 +15,9 @@ class NexusIqConnector extends EventEmitter {
     this.requestSeq = 0;
     this.assets = new Map();
     this.pendingHistory = new Map();
+    this.subscriptions = new Set();
+    this.requestQueue = [];
+    this.queueTimer = null;
     this.authenticated = false;
   }
 
@@ -95,26 +98,37 @@ class NexusIqConnector extends EventEmitter {
   }
 
   extractActives(msg) {
-    const candidates = [
-      msg?.result?.actives,
-      msg?.result?.binary?.actives,
-      msg?.result?.turbo?.actives,
-      msg?.result?.digital?.actives,
-      msg?.actives,
-      msg?.binary?.actives,
-      msg?.turbo?.actives,
-      msg?.digital?.actives
-    ];
-    const raw = candidates.find(value => value && typeof value === 'object') || {};
-    const entries = Array.isArray(raw)
-      ? raw.map((item, index) => [String(item.active_id ?? item.id ?? index), item])
-      : Object.entries(raw);
-    return entries.map(([id, item]) => ({
-      activeId: Number(item.active_id ?? item.id ?? id),
-      asset: String(item.name || item.title || item.instrument_name || id),
-      enabled: item.enabled !== false && item.is_enabled !== false,
-      suspended: Boolean(item.is_suspended || item.suspended)
-    })).filter(item => Number.isFinite(item.activeId) && item.activeId > 0);
+    const roots = [msg?.result, msg?.data, msg];
+    const merged = new Map();
+    const add = (raw, modality) => {
+      if (!raw || typeof raw !== 'object') return;
+      const entries = Array.isArray(raw) ? raw.map((item, index) => [String(item?.active_id ?? item?.id ?? index), item]) : Object.entries(raw);
+      for (const [key, item] of entries) {
+        if (!item || typeof item !== 'object') continue;
+        const activeId = Number(item.active_id ?? item.activeId ?? item.id ?? key);
+        if (!Number.isFinite(activeId) || activeId <= 0) continue;
+        const asset = String(item.name || item.title || item.instrument_name || item.symbol || key);
+        const current = merged.get(activeId) || { activeId, asset, enabled: true, suspended: true, isOtc: false, modalities: [], productStatus: {} };
+        current.asset = current.asset || asset;
+        current.enabled = current.enabled || (item.enabled !== false && item.is_enabled !== false && item.enabled !== 0);
+        current.suspended = current.suspended && Boolean(item.is_suspended || item.suspended);
+        current.isOtc = current.isOtc || item.is_otc === true || item.isOtc === true || /(?:^|[._ -])OTC$/i.test(asset);
+        if (modality) {
+          if (!current.modalities.includes(modality)) current.modalities.push(modality);
+          current.productStatus[modality] = { enabled: item.enabled !== false && item.is_enabled !== false, suspended: Boolean(item.is_suspended || item.suspended) };
+        }
+        merged.set(activeId, current);
+      }
+    };
+    for (const root of roots) {
+      if (!root || typeof root !== 'object') continue;
+      add(root.binary?.actives ?? root.binary, 'binary');
+      add(root.turbo?.actives ?? root.turbo, 'binary');
+      add(root.digital?.actives ?? root.digital, 'digital');
+      add(root.digital_options?.actives ?? root.digital_options, 'digital');
+      add(root.actives, null);
+    }
+    return [...merged.values()];
   }
 
   handle(packet) {
@@ -142,7 +156,7 @@ class NexusIqConnector extends EventEmitter {
       if (assets.length) {
         this.assets = new Map(assets.map(asset => [asset.activeId, asset]));
         this.emit('assets', assets);
-        this.requestMarketData(assets.filter(asset => asset.enabled && !asset.suspended).slice(0, 100));
+        this.requestMarketData(assets.filter(asset => asset.enabled && !asset.suspended));
       }
       return;
     }
@@ -182,18 +196,28 @@ class NexusIqConnector extends EventEmitter {
   }
 
   requestMarketData(assets) {
-    for (const asset of assets) {
-      for (const size of [60, 300]) {
-        this.subscribe('candle-generated', { routingFilters: { active_id: asset.activeId, size } });
-        const requestId = 'history:' + asset.activeId + ':' + size;
-        this.sendMessage('get-candles', '2.0', {
-          active_id: asset.activeId,
-          size,
-          to: Math.floor(Date.now() / 1000),
-          count: 100
-        }, requestId);
-      }
+    for (const asset of assets) for (const size of [60, 300]) {
+      this.requestQueue.push({ type: 'subscribe', asset, size });
+      this.requestQueue.push({ type: 'history', asset, size });
     }
+    this.pumpQueue();
+  }
+
+  pumpQueue() {
+    if (this.queueTimer || this.stopped || !this.authenticated) return;
+    const item = this.requestQueue.shift();
+    if (!item) return;
+    if (item.type === 'subscribe') {
+      const params = { routingFilters: { active_id: item.asset.activeId, size: item.size } };
+      const key = 'candle-generated:' + JSON.stringify(params);
+      if (!this.subscriptions.has(key)) {
+        this.subscriptions.add(key);
+        this.sendRaw({ name: 'subscribeMessage', request_id: String(++this.requestSeq), msg: { name: 'candle-generated', params } });
+      }
+    } else {
+      this.sendMessage('get-candles', '2.0', { active_id: item.asset.activeId, size: item.size, to: Math.floor(Date.now() / 1000), count: 100 }, 'history:' + item.asset.activeId + ':' + item.size);
+    }
+    this.queueTimer = setTimeout(() => { this.queueTimer = null; this.pumpQueue(); }, 40);
   }
 
   reconnect() {
