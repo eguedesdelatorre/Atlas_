@@ -100,7 +100,7 @@ function startFeed(){
 
 const root=path.resolve(__dirname,'..','public');
 function serveFile(res,name){const file=path.resolve(root,name);if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end('Forbidden');}fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);return res.end('Not found');}const ext=path.extname(file);res.writeHead(200,{'content-type':ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':'application/octet-stream','cache-control':'no-cache'});res.end(data);});}
-const server=http.createServer((req,res)=>{
+const server=http.createServer(async(req,res)=>{
  res.setHeader('x-content-type-options','nosniff');res.setHeader('x-frame-options','DENY');res.setHeader('referrer-policy','strict-origin-when-cross-origin');
  const url=new URL(req.url,'http://'+(req.headers.host||'localhost')),session=currentSession(req);
  if(req.method==='GET'&&url.pathname==='/api/health')return sendJson(res,200,{ok:true,app:'ATLAS AI',mode:'read_only'});
