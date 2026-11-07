@@ -3,8 +3,8 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NexusIqConnector } = require('./nexus-iq-connector');
-const PORT = 3000;
-const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null};
+const PORT = Number(process.env.PORT || 3000);
+const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null,lastAssetUpdateAt:null};
 let connector=null;
 
 function classifyMarket(asset) {
@@ -15,11 +15,13 @@ function classifyMarket(asset) {
 function marketSnapshot() {
   const openAssets=state.assets.filter(a=>classifyMarket(a)==='OPEN');
   const otcAssets=state.assets.filter(a=>classifyMarket(a)==='OTC');
+  const modality = list => ({ binary:list.filter(a=>a.modalities?.includes('binary')), digital:list.filter(a=>a.modalities?.includes('digital')), unclassified:list.filter(a=>!a.modalities?.length) });
+  const op=modality(openAssets), ot=modality(otcAssets);
   return {
     assets:state.assets,
-    markets:{open:openAssets,otc:otcAssets},
-    signals:{open:[],otc:[]},
-    marketCounts:{open:openAssets.length,otc:otcAssets.length}
+    markets:{open:openAssets,otc:otcAssets,openBinary:op.binary,openDigital:op.digital,otcBinary:ot.binary,otcDigital:ot.digital},
+    signals:{open:[],otc:[],openBinary:[],openDigital:[],otcBinary:[],otcDigital:[]},
+    marketCounts:{open:openAssets.length,otc:otcAssets.length,binary:state.assets.filter(a=>a.modalities?.includes('binary')).length,digital:state.assets.filter(a=>a.modalities?.includes('digital')).length,openBinary:op.binary.length,openDigital:op.digital.length,otcBinary:ot.binary.length,otcDigital:ot.digital.length,unclassified:state.assets.filter(a=>!a.modalities?.length).length}
   };
 }
 function startFeed(){
@@ -45,7 +47,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/state') {
     res.writeHead(200, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
-    return res.end(JSON.stringify({status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,mode:'read_only'}));
+    return res.end(JSON.stringify({status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,mode:'read_only'}));
   }
   const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
   const file = path.resolve(root, requested);
