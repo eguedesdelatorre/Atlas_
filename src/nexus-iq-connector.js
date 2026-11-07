@@ -19,37 +19,73 @@ class NexusIqConnector extends EventEmitter {
     this.requestQueue = [];
     this.queueTimer = null;
     this.authenticated = false;
+    this.phase = 'idle';
+    this.connecting = false;
+  }
+
+  errorDetail(error, phase = this.phase) {
+    const code = error?.cause?.code || error?.code || error?.cause?.name || '';
+    const message = String(error?.message || error || 'unknown error').replace(/[\\r\\n]+/g, ' ').slice(0, 180);
+    return new Error('IQ ' + phase + ' failed' + (code ? ' [' + code + ']' : '') + ': ' + message);
   }
 
   async login() {
     const body = new URLSearchParams({ identifier: this.email, password: this.password });
-    const response = await fetch('https://auth.iqoption.com/api/v2/login', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-        origin: 'https://iqoption.com',
-        referer: 'https://iqoption.com/'
-      },
-      body
-    });
-    if (!response.ok) throw new Error('IQ Option authentication failed (HTTP ' + response.status + ')');
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetch('https://auth.iqoption.com/api/v2/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+          origin: 'https://iqoption.com',
+          referer: 'https://iqoption.com/',
+          'user-agent': 'Mozilla/5.0 (compatible; AtlasAI/1.0)'
+        },
+        body,
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch (error) {
+      throw this.errorDetail(error, 'login HTTP');
+    }
+    if (!response.ok) throw new Error('IQ login HTTP rejected: status ' + response.status);
+    let data;
+    try { data = await response.json(); }
+    catch (error) { throw this.errorDetail(error, 'login response'); }
     const ssid = data.ssid || data?.data?.ssid || data?.result?.ssid;
-    if (!ssid) throw new Error('IQ Option did not return an SSID; login may require 2FA or a supported login flow');
+    if (!ssid) {
+      const reason = data?.message || data?.error || data?.code || 'no SSID returned';
+      throw new Error('IQ login did not return an SSID (' + String(reason).slice(0, 120) + '); 2FA or provider login changes may require manual review');
+    }
     return String(ssid);
   }
 
   async connect() {
-    if (this.stopped) return;
+    if (this.stopped || this.connecting || this.ws?.readyState === WebSocket.OPEN) return;
+    this.connecting = true;
+    this.phase = 'login HTTP';
     try {
       this.ssid = await this.login();
+      if (this.stopped) return;
+      this.phase = 'WebSocket handshake';
       const ws = new WebSocket('wss://iqoption.com/echo/websocket', {
         headers: { Origin: 'https://iqoption.com' },
-        handshakeTimeout: 15000
+        handshakeTimeout: 20000,
+        perMessageDeflate: false
       });
       this.ws = ws;
+      this.connecting = false;
+      let settled = false;
+      const handshakeTimer = setTimeout(() => {
+        if (!settled && ws.readyState !== WebSocket.OPEN) {
+          ws.terminate();
+          this.emit('error', new Error('IQ WebSocket handshake timed out after 20s'));
+        }
+      }, 22000);
       ws.on('open', () => {
+        settled = true;
+        clearTimeout(handshakeTimer);
+        this.phase = 'WebSocket session';
         this.sendRaw({ name: 'ssid', msg: this.ssid });
       });
       ws.on('message', raw => {
@@ -61,8 +97,11 @@ class NexusIqConnector extends EventEmitter {
           this.emit('protocolError', error);
         }
       });
-      ws.on('error', error => this.emit('error', error));
-      ws.on('close', () => {
+      ws.on('error', error => this.emit('error', this.errorDetail(error, 'WebSocket')));
+      ws.on('close', (code, reason) => {
+        settled = true;
+        clearTimeout(handshakeTimer);
+        this.connecting = false;
         this.authenticated = false;
         this.subscriptions.clear();
         this.requestQueue = [];
@@ -71,6 +110,7 @@ class NexusIqConnector extends EventEmitter {
         if (!this.stopped) this.reconnect();
       });
     } catch (error) {
+      this.connecting = false;
       this.emit('error', error);
       this.reconnect();
     }
@@ -225,7 +265,7 @@ class NexusIqConnector extends EventEmitter {
 
   reconnect() {
     if (this.stopped) return;
-    const delay = Math.min(30000, 2000 * (2 ** Math.min(this.retry++, 4)));
+    const base = Math.min(60000, 5000 * (2 ** Math.min(this.retry++, 4)));\n    const delay = Math.round(base * (0.85 + Math.random() * 0.3));
     this.emit('reconnecting', { delay });
     setTimeout(() => { if (!this.stopped) this.connect(); }, delay);
   }
