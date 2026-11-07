@@ -1,13 +1,18 @@
-# ATLAS AI — nova estrutura integrada
+# ATLAS AI — integração da API v2
 
-Esta pasta recebe a nova estrutura web/cloud adaptada para ATLAS AI, sem substituir a aplicação principal existente em `public/` e `src/`.
+A API versionada foi integrada ao servidor principal existente. Ela reutiliza o mesmo estado do conector IQ Option, o mesmo histórico persistente e o motor de estratégia ATLAS AI.
 
-## Estratégia de integração
-- A aplicação atual permanece como produção e fonte do motor de sinais e do conector IQ Option.
-- A nova estrutura fica isolada em `platform-v2/` durante a migração.
-- Não publicar sinais simulados: sem feed real e estratégia validada, a API deve informar ausência de dados.
-- Não duplicar nem expor credenciais. Segredos permanecem exclusivamente nas variáveis privadas do Railway.
-- A integração final deve reutilizar o motor real de `src/signal-engine.js` e o conector `src/nexus-iq-connector.js` por meio de uma camada de adaptação testada.
+## Endpoints (protegidos por sessão)
+- GET /api/v1/status — estado da conexão, feed e motor.
+- GET /api/v1/signals — sinais gerados pelo motor existente.
+- GET /api/v1/history — registros recentes de sinais e resultados.
 
-## Estado desta etapa
-Esta é uma área de integração isolada. Ela ainda não substitui a interface atual, não muda o comando de inicialização da raiz e não altera o serviço Railway existente.
+## Segurança e operação
+- API em modo somente leitura; não envia ordens.
+- Endpoints v2 herdam a autenticação da aplicação.
+- dataMode só é live quando a sessão do feed está conectada e candles foram recebidos.
+- Sem feed real, os sinais existentes não são apresentados como live.
+- Credenciais ficam somente nas variáveis privadas Railway.
+
+## Deploy
+A aplicação raiz continua sendo o único serviço de produção. A pasta platform-v2/cloud é apenas um scaffold inicial e não deve ser implantada como segundo serviço, pois isso duplicaria a conexão da corretora.
