@@ -38,9 +38,11 @@ label{display:block;font-size:12px;color:#c6d2e2;margin:18px 0 9px}.field{width:
 </section>
 </main>
 <script>
-const password=document.getElementById('password'),message=document.getElementById('message');
+const password=document.getElementById('password'),message=document.getElementById('message'),form=document.getElementById('loginForm'),submit=form.querySelector('button[type="submit"]');
+function showMessage(text,error=true){message.style.display='block';message.style.borderColor=error?'#624b27':'#24583f';message.style.background=error?'#241d13':'#10251e';message.style.color=error?'#e9c58f':'#8ce0b4';message.textContent=text;}
 document.getElementById('toggle').addEventListener('click',()=>{const show=password.type==='password';password.type=show?'text':'password';document.getElementById('toggle').textContent=show?'OCULTAR':'MOSTRAR'});
-document.getElementById('loginForm').addEventListener('submit',e=>{e.preventDefault();message.style.display='block';message.textContent='A tela está pronta, mas a autenticação ainda não foi conectada ao servidor. Nenhum acesso foi liberado.'});
-document.getElementById('forgot').addEventListener('click',e=>{e.preventDefault();message.style.display='block';message.textContent='A recuperação de senha será habilitada junto com o serviço de autenticação.'});
+form.addEventListener('submit',async e=>{e.preventDefault();submit.disabled=true;submit.textContent='Verificando acesso…';message.style.display='none';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({email:document.getElementById('email').value.trim(),password:password.value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível entrar.');showMessage('Acesso autorizado. Abrindo o terminal…',false);location.replace('/');}catch(err){showMessage(err.message||'Falha de conexão. Tente novamente.');submit.disabled=false;submit.innerHTML='Entrar no ATLAS <span aria-hidden="true">→</span>';}});
+document.getElementById('forgot').addEventListener('click',e=>{e.preventDefault();showMessage('A recuperação automática ainda não foi configurada. Solicite a redefinição ao administrador do ATLAS.');});
+fetch('/api/auth/me',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{if(d.authenticated)location.replace('/');}).catch(()=>{});
 </script>
 </body></html>
