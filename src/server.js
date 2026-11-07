@@ -59,29 +59,29 @@ function startFeed(){
  connector.connect().catch(()=>{});
 }
 
-const root = path.resolve(__dirname, '..', 'public');
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
-  if (req.method === 'GET' && url.pathname === '/api/health') {
-    res.writeHead(200, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
-    return res.end(JSON.stringify({ok:true,app:'ATLAS AI',status:'online',feed:state,mode:'read_only'}));
-  }
-  if (req.method === 'GET' && url.pathname === '/api/state') {
-    res.writeHead(200, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
-    return res.end(JSON.stringify({status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,mode:'read_only'}));
-  }
-  const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-  const file = path.resolve(root, requested);
-  if (file !== path.join(root,'index.html') && !file.startsWith(root + path.sep)) {
-    res.writeHead(403); return res.end('Forbidden');
-  }
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    const ext = path.extname(file);
-    const type = ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : 'application/octet-stream';
-    res.writeHead(200, {'content-type':type,'cache-control':'no-cache'});
-    res.end(data);
-  });
+const root=path.resolve(__dirname,'..','public');
+function serveFile(res,name){const file=path.resolve(root,name);if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end('Forbidden');}fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);return res.end('Not found');}const ext=path.extname(file);res.writeHead(200,{'content-type':ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':'application/octet-stream','cache-control':'no-cache'});res.end(data);});}
+const server=http.createServer((req,res)=>{
+ res.setHeader('x-content-type-options','nosniff');res.setHeader('x-frame-options','DENY');res.setHeader('referrer-policy','strict-origin-when-cross-origin');
+ const url=new URL(req.url,'http://'+(req.headers.host||'localhost')),session=currentSession(req);
+ if(req.method==='GET'&&url.pathname==='/api/health')return sendJson(res,200,{ok:true,app:'ATLAS AI',mode:'read_only'});
+ if(req.method==='GET'&&url.pathname==='/api/auth/me')return sendJson(res,200,{authenticated:!!session,user:session?.email||null});
+ if(req.method==='POST'&&url.pathname==='/api/auth/login'){
+  const ip=req.headers['x-forwarded-for']?.split(',')[0]?.trim()||req.socket.remoteAddress||'unknown',attempt=loginAttempts.get(ip)||{count:0,until:0};
+  if(attempt.until>Date.now())return sendJson(res,429,{error:'Muitas tentativas. Aguarde 10 minutos.'});
+  let body='';req.on('data',c=>{body+=c;if(body.length>4096)req.destroy();});req.on('end',()=>{
+   let d;try{d=JSON.parse(body||'{}')}catch{return sendJson(res,400,{error:'Requisição inválida.'})}
+   const configured=!!(process.env.ATLAS_ADMIN_EMAIL&&process.env.ATLAS_ADMIN_PASSWORD);
+   const valid=configured&&typeof d.email==='string'&&typeof d.password==='string'&&equal(d.email.trim().toLowerCase(),process.env.ATLAS_ADMIN_EMAIL.trim().toLowerCase())&&equal(d.password,process.env.ATLAS_ADMIN_PASSWORD);
+   if(!valid){attempt.count++;if(attempt.count>=5){attempt.count=0;attempt.until=Date.now()+600000;}loginAttempts.set(ip,attempt);return sendJson(res,401,{error:configured?'E-mail ou senha incorretos.':'Login não configurado no servidor.'});}
+   loginAttempts.delete(ip);const token=crypto.randomBytes(32).toString('base64url');sessions.set(token,{email:process.env.ATLAS_ADMIN_EMAIL,expires:Date.now()+SESSION_TTL_MS});setCookie(res,token,SESSION_TTL_MS/1000);return sendJson(res,200,{ok:true});
+  });return;
+ }
+ if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const t=cookies(req.headers.cookie||'')[COOKIE_NAME];if(t)sessions.delete(t);setCookie(res,'',0);return sendJson(res,200,{ok:true});}
+ if(!session){if(url.pathname==='/login.html'||url.pathname==='/login')return serveFile(res,'login.html');if(url.pathname.startsWith('/api/'))return sendJson(res,401,{error:'Não autenticado.'});res.writeHead(302,{location:'/login.html','cache-control':'no-store'});return res.end();}
+ if(req.method==='GET'&&url.pathname==='/api/state')return sendJson(res,200,{status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,mode:'read_only'});
+ if(url.pathname==='/login.html'){res.writeHead(302,{location:'/'});return res.end();}
+ const requested=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));return serveFile(res,requested);
 });
 server.listen(PORT, '0.0.0.0', () => (console.log('ATLAS AI online on port ' + PORT),startFeed()));
 process.on('SIGTERM', () => {connector?.stop();server.close(() => process.exit(0))});
