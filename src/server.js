@@ -71,9 +71,8 @@ function settleSignalOnClosedCandle(asset,candle,timeframe){const id=String(asse
 function restoreSignalHistory(){try{if(!fs.existsSync(HISTORY_FILE))return;const rows=fs.readFileSync(HISTORY_FILE,'utf8').split(/\r?\n/).filter(Boolean);const signals=new Map(),results=new Map();for(const line of rows){let r;try{r=JSON.parse(line)}catch{continue;}if(r.type==='signal'&&r.id)signals.set(r.id,{...r});if(r.type==='signal_result'&&r.signalId)results.set(r.signalId,r);}for(const [id,signal] of signals){const result=results.get(id);if(result){Object.assign(signal,{resultStatus:result.outcome,resultAt:result.timestamp,galeLevel:result.galeLevel??signal.galeLevel,resultDetail:result.detail});if(result.outcome==='LOSS_GALE1_PENDING'){signal.galeLevel=1;signal.nextAttemptAt=Date.parse(signal.time)+(signal.timeframe==='M5'?600000:120000);pendingSignalResults.set(id,signal);}}else if(signal.resultStatus==='PENDING')pendingSignalResults.set(id,signal);const bucket=signal.market==='OTC'?'otc':'open';state.signals[bucket].push(signal);}for(const bucket of ['open','otc'])state.signals[bucket].sort((a,b)=>Date.parse(b.generatedAt)-Date.parse(a.generatedAt));console.log('[SIGNAL] restored from persistent history:',signals.size);}catch(e){console.error('[SIGNAL] restore error:',e.message);}}
 restoreSignalHistory();
 const SIGNAL_MIN_SCORE=Number(process.env.ATLAS_MIN_SCORE||78);
-function evaluateAssetSignal(asset){
- const id=String(asset.activeId),now=Date.now();
- const timeframe=arguments[1]||'M1',cooldownKey=id+':'+timeframe;
+function evaluateAssetSignal(asset,timeframe='M1',entryAt=null){
+ const id=String(asset.activeId),now=Date.now(),cooldownKey=id+':'+timeframe;
  if((signalCooldowns.get(cooldownKey)||0)>now)return;
  const base=state.candleHistory[id+':'+timeframe]||[];
  const confirmTf=timeframe==='M5'?'M1':'M5';
@@ -82,11 +81,16 @@ function evaluateAssetSignal(asset){
  if(!signal||signal.score<SIGNAL_MIN_SCORE)return;
  const market=signal.market==='OTC'?'otc':'open';
  if(state.signals[market].some(x=>x.id===signal.id))return;
+ const plannedEntry=entryAt||now;
+ signal.entryAt=new Date(plannedEntry).toISOString();
+ signal.entryDate=localDate(signal.entryAt);
+ signal.entryTime=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(plannedEntry));
+ signal.alertLeadSeconds=Math.max(0,Math.round((plannedEntry-now)/1000));
  signalCooldowns.set(cooldownKey,now+(timeframe==='M5'?20:4)*60*1000);
- signal.resultStatus='PENDING';signal.nextAttemptAt=Date.parse(signal.time)+(timeframe==='M5'?300000:60000);
+ signal.resultStatus='PENDING';signal.nextAttemptAt=plannedEntry+(timeframe==='M5'?300000:60000);
  state.signals[market].unshift(signal);state.signals[market]=state.signals[market].slice(0,1000);pendingSignalResults.set(signal.id,signal);
  persistRecord({type:'signal',...signal,timestamp:signal.generatedAt,date:localDate(signal.generatedAt)});
- console.log('[SIGNAL] confirmed',signal.market,signal.asset,signal.direction,signal.score);
+ console.log('[SIGNAL] confirmed',signal.market,signal.asset,signal.direction,signal.score,'entry',signal.entryAt,'lead',signal.alertLeadSeconds+'s');
 }
 let connector=null;
 
@@ -140,7 +144,7 @@ function startFeed(){
  connector.on('packet',p=>{state.lastPacketAt=new Date().toISOString();});
  connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId,isOtc:a.isOtc===true||/-OTC$/i.test(a.asset)||/\\bOTC\\b/i.test(a.asset),modalities:a.modalities||[],productStatus:a.productStatus||{}}));state.lastAssetUpdateAt=new Date().toISOString();state.message='Catálogo recebido; carregando dados de todos os ativos habilitados';console.log('[IQ] assets received:',state.assets.length);});
  connector.on('candles',p=>{if(p.asset&&Array.isArray(p.candles)){state.candlesReceived+=p.candles.length;const id=String(p.activeId),key=id+':'+p.timeframe;state.candleHistory[key]=p.candles.slice(-150).sort((a,b)=>Number(a.from??a.at??a.time??a.to??0)-Number(b.from??b.at??b.time??b.to??0));for(const candle of p.candles){const ts=Number(candle.from??candle.at??candle.time??candle.to??Date.now()/1000);const timestamp=new Date(ts<1e12?ts*1000:ts).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle});}const asset=state.assets.find(a=>String(a.activeId)===id);if(asset)evaluateAssetSignal(asset);console.log('[IQ] historical candles:',p.asset,p.timeframe,p.candles.length);state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
- connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();const id=String(p.activeId),key=id+':'+p.timeframe;const list=state.candleHistory[key]||[];const stamp=candleStamp(p.candle);const isNew=!list.some(c=>candleStamp(c)===stamp);if(isNew){if((p.timeframe==='M1'||p.timeframe==='M5')&&list.length){const prior=[...list].sort((a,b)=>candleStamp(a)-candleStamp(b)).at(-1);const previousAsset=state.assets.find(a=>String(a.activeId)===id);if(previousAsset)settleSignalOnClosedCandle(previousAsset,prior,p.timeframe);}list.push(p.candle);}else{const ix=list.findIndex(c=>candleStamp(c)===stamp);if(ix>=0)list[ix]=p.candle;}list.sort((a,b)=>candleStamp(a)-candleStamp(b));state.candleHistory[key]=list.slice(-150);const rawTs=Number(p.candle.from??p.candle.at??p.candle.time??p.candle.to??Date.now()/1000);const timestamp=new Date(rawTs<1e12?rawTs*1000:rawTs).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle:p.candle});const asset=state.assets.find(a=>String(a.activeId)===id);if(asset&&isNew&&(p.timeframe==='M1'||p.timeframe==='M5'))evaluateAssetSignal(asset,p.timeframe);if(++liveCandlePackets%100===0)console.log('[IQ] live candle packets:',liveCandlePackets,'last:',p.asset,p.timeframe);state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
+ connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();const id=String(p.activeId),key=id+':'+p.timeframe;const list=state.candleHistory[key]||[];const stamp=candleStamp(p.candle);const isNew=!list.some(c=>candleStamp(c)===stamp);if(isNew){if((p.timeframe==='M1'||p.timeframe==='M5')&&list.length){const prior=[...list].sort((a,b)=>candleStamp(a)-candleStamp(b)).at(-1);const previousAsset=state.assets.find(a=>String(a.activeId)===id);if(previousAsset)settleSignalOnClosedCandle(previousAsset,prior,p.timeframe);}list.push(p.candle);}else{const ix=list.findIndex(c=>candleStamp(c)===stamp);if(ix>=0)list[ix]=p.candle;}list.sort((a,b)=>candleStamp(a)-candleStamp(b));state.candleHistory[key]=list.slice(-150);const rawTs=Number(p.candle.from??p.candle.at??p.candle.time??p.candle.to??Date.now()/1000);const timestamp=new Date(rawTs<1e12?rawTs*1000:rawTs).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle:p.candle});const asset=state.assets.find(a=>String(a.activeId)===id);if(asset&&(p.timeframe==='M1'||p.timeframe==='M5')){const interval=p.timeframe==='M5'?300000:60000;const entryAt=stamp+interval;const secondsToClose=(entryAt-Date.now())/1000;if(secondsToClose>=2&&secondsToClose<=8)evaluateAssetSignal(asset,p.timeframe,entryAt);}if(++liveCandlePackets%100===0)console.log('[IQ] live candle packets:',liveCandlePackets,'last:',p.asset,p.timeframe);state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
  connector.connect().catch(()=>{});
 }
 
