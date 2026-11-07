@@ -6,8 +6,26 @@ const { NexusIqConnector } = require('./nexus-iq-connector');
 const crypto = require('node:crypto');
 const readline = require('node:readline');
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const COOKIE_NAME = 'atlas_session';
 const sessions = new Map();
+const SESSION_FILE = path.join(process.env.ATLAS_DATA_DIR || '/data', 'atlas-sessions.json');
+function sessionKey(token){return crypto.createHash('sha256').update(token).digest('hex');}
+function saveSessions(){
+  try{
+    const rows=[...sessions.entries()].filter(([,v])=>v.expires>Date.now());
+    const tmp=SESSION_FILE+'.tmp';
+    fs.mkdirSync(path.dirname(SESSION_FILE),{recursive:true});
+    fs.writeFileSync(tmp,JSON.stringify(rows),'utf8');
+    fs.renameSync(tmp,SESSION_FILE);
+    return true;
+  }catch(e){console.error('[AUTH] session persistence error:',e.message);return false;}
+}
+try{
+  const rows=JSON.parse(fs.readFileSync(SESSION_FILE,'utf8'));
+  if(Array.isArray(rows))for(const [key,value] of rows)if(value?.expires>Date.now())sessions.set(key,value);
+}catch(e){if(e.code!=='ENOENT')console.error('[AUTH] session restore error:',e.message);}
+
 const loginAttempts = new Map();
 function cookies(header='') {
   return Object.fromEntries(header.split(';').map(x=>x.trim()).filter(Boolean).map(x=>{
@@ -21,9 +39,10 @@ function equal(a,b) {
 function currentSession(req) {
   const token=cookies(req.headers.cookie||'')[COOKIE_NAME];
   if(!token)return null;
-  const session=sessions.get(token);
-  if(!session||session.expires<Date.now()){sessions.delete(token);return null;}
-  session.expires=Date.now()+SESSION_TTL_MS;
+  const key=sessionKey(token),session=sessions.get(key);
+  if(!session||session.expires<Date.now()){sessions.delete(key);saveSessions();return null;}
+  session.expires=Date.now()+(session.remember?REMEMBER_TTL_MS:SESSION_TTL_MS);
+  saveSessions();
   return session;
 }
 function setCookie(res,token,maxAge) {
@@ -113,10 +132,12 @@ const server=http.createServer(async(req,res)=>{
    const configured=!!(process.env.ATLAS_ADMIN_EMAIL&&process.env.ATLAS_ADMIN_PASSWORD);
    const valid=configured&&typeof d.email==='string'&&typeof d.password==='string'&&equal(d.email.trim().toLowerCase(),process.env.ATLAS_ADMIN_EMAIL.trim().toLowerCase())&&equal(d.password,process.env.ATLAS_ADMIN_PASSWORD);
    if(!valid){attempt.count++;if(attempt.count>=5){attempt.count=0;attempt.until=Date.now()+600000;}loginAttempts.set(ip,attempt);return sendJson(res,401,{error:configured?'E-mail ou senha incorretos.':'Login não configurado no servidor.'});}
-   loginAttempts.delete(ip);const token=crypto.randomBytes(32).toString('base64url');sessions.set(token,{email:process.env.ATLAS_ADMIN_EMAIL,expires:Date.now()+SESSION_TTL_MS});setCookie(res,token,SESSION_TTL_MS/1000);return sendJson(res,200,{ok:true});
+   loginAttempts.delete(ip);const token=crypto.randomBytes(32).toString('base64url');const remember=d.remember===true,ttl=remember?REMEMBER_TTL_MS:SESSION_TTL_MS;
+   sessions.set(sessionKey(token),{email:process.env.ATLAS_ADMIN_EMAIL,expires:Date.now()+ttl,remember});
+   saveSessions();setCookie(res,token,ttl/1000);return sendJson(res,200,{ok:true,remember,expiresIn:ttl/1000});
   });return;
  }
- if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const t=cookies(req.headers.cookie||'')[COOKIE_NAME];if(t)sessions.delete(t);setCookie(res,'',0);return sendJson(res,200,{ok:true});}
+ if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const t=cookies(req.headers.cookie||'')[COOKIE_NAME];if(t)sessions.delete(sessionKey(t));saveSessions();setCookie(res,'',0);return sendJson(res,200,{ok:true});}
  if(!session){if(url.pathname==='/login.html'||url.pathname==='/login')return serveFile(res,'login.html');if(url.pathname.startsWith('/api/'))return sendJson(res,401,{error:'Não autenticado.'});res.writeHead(302,{location:'/login.html','cache-control':'no-store'});return res.end();}
  if(req.method==='GET'&&url.pathname==='/api/state')return sendJson(res,200,{status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,lastPacketAt:state.lastPacketAt,lastConnectorError:state.lastConnectorError,protocolErrors:state.protocolErrors,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},mode:'read_only'});
  if(req.method==='GET'&&url.pathname==='/api/history'){
