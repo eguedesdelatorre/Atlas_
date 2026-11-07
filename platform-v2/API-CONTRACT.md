@@ -1,16 +1,16 @@
-# ATLAS AI — contrato da nova API (rascunho de integração)
+# ATLAS AI — API v2
 
-## Princípios
-1. A API nova não envia ordens à corretora.
-2. O feed deve ser identificado como real, indisponível ou desconectado; nunca inventar candles ou sinais.
-3. O motor de estratégia continua independente do adaptador IQ Option.
-4. A interface atual e o backend atual continuam operacionais durante a migração.
+A API v2 roda no servidor principal (src/server.js) e compartilha o estado real da aplicação.
 
-## Endpoints planejados
-- GET /health — saúde do serviço.
-- GET /api/v1/status — estado do feed, corretora e motor.
-- GET /api/v1/signals — sinais validados; lista vazia quando não houver evidência suficiente.
-- GET /api/v1/history — histórico persistido.
+Todos os endpoints exigem sessão autenticada, como as rotas atuais.
 
-## Estado inicial
-O serviço desta pasta ainda não está ligado ao feed IQ Option nem ao motor real. Não marcar broker.connected ou strategy.active como true até validação por testes e logs.
+- GET /api/v1/status: estado do conector IQ Option, disponibilidade do motor ATLAS e modo de dados.
+- GET /api/v1/signals: sinais emitidos pelo motor src/signal-engine.js, separados internamente por mercado e entregues em uma lista ordenada.
+- GET /api/v1/history?limit=200: registros recentes de sinais e resultados do armazenamento persistente.
+
+## Limites
+- Modo somente leitura: nenhuma ordem é enviada.
+- dataMode=live exige conexão ativa e recebimento de candles.
+- Sem dados reais, a API informa no_live_data.
+- A autenticação é herdada da aplicação; chamadas sem sessão recebem HTTP 401.
+- Credenciais nunca são retornadas pela API.
