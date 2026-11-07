@@ -2,7 +2,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const PORT = Number(process.env.PORT || 3000);
+const PORT = 3000; // Porta interna alinhada ao domínio Railway
 const root = path.resolve(__dirname, '..', 'public');
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
