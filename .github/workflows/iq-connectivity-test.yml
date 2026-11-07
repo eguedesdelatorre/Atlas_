@@ -1,0 +1,46 @@
+name: IQ Option external connectivity test
+
+on:
+  push:
+    paths:
+      - ".github/workflows/iq-connectivity-test.yml"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe IQ Option login endpoint (no credentials)
+        run: |
+          node <<'NODE'
+          const https = require('https');
+          const req = https.request({
+            hostname: 'auth.iqoption.com',
+            path: '/api/v2/login',
+            method: 'POST',
+            timeout: 15000,
+            headers: {
+              'Origin': 'https://iqoption.com',
+              'User-Agent': 'NEXUS-Cloud/1.0',
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }, res => {
+            console.log('HTTPS_CONNECTED=true');
+            console.log('HTTP_STATUS=' + res.statusCode);
+            res.resume();
+            res.on('end', () => process.exit(0));
+          });
+          req.on('timeout', () => {
+            console.log('HTTPS_CONNECTED=false');
+            console.log('ERROR=TIMEOUT');
+            req.destroy();
+            process.exit(2);
+          });
+          req.on('error', e => {
+            console.log('HTTPS_CONNECTED=false');
+            console.log('ERROR=' + e.code);
+            process.exit(2);
+          });
+          req.end('{}');
+          NODE
