@@ -1,0 +1,12 @@
+{
+  "name": "atlas-ai-platform-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated ATLAS AI platform integration scaffold",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
