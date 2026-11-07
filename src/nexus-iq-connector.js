@@ -64,6 +64,9 @@ class NexusIqConnector extends EventEmitter {
       ws.on('error', error => this.emit('error', error));
       ws.on('close', () => {
         this.authenticated = false;
+        this.subscriptions.clear();
+        this.requestQueue = [];
+        if (this.queueTimer) { clearTimeout(this.queueTimer); this.queueTimer = null; }
         this.emit('disconnected');
         if (!this.stopped) this.reconnect();
       });
@@ -108,7 +111,7 @@ class NexusIqConnector extends EventEmitter {
         const activeId = Number(item.active_id ?? item.activeId ?? item.id ?? key);
         if (!Number.isFinite(activeId) || activeId <= 0) continue;
         const asset = String(item.name || item.title || item.instrument_name || item.symbol || key);
-        const current = merged.get(activeId) || { activeId, asset, enabled: true, suspended: true, isOtc: false, modalities: [], productStatus: {} };
+        const current = merged.get(activeId) || { activeId, asset, enabled: false, suspended: true, isOtc: false, modalities: [], productStatus: {} };
         current.asset = current.asset || asset;
         current.enabled = current.enabled || (item.enabled !== false && item.is_enabled !== false && item.enabled !== 0);
         current.suspended = current.suspended && Boolean(item.is_suspended || item.suspended);
@@ -229,6 +232,7 @@ class NexusIqConnector extends EventEmitter {
 
   stop() {
     this.stopped = true;
+    if (this.queueTimer) clearTimeout(this.queueTimer);
     this.ws?.close();
   }
 }
