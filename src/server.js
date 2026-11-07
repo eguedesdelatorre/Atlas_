@@ -39,7 +39,7 @@ const HISTORY_DIR=process.env.ATLAS_DATA_DIR||'/data';
 const HISTORY_FILE=path.join(HISTORY_DIR,'atlas-history.jsonl');
 let historyReady=false,historyWrites=0,historyWriteError=null;
 try{fs.mkdirSync(HISTORY_DIR,{recursive:true});fs.accessSync(HISTORY_DIR,fs.constants.W_OK);historyReady=true;}catch(e){historyWriteError=e.message;}
-function persistRecord(record){if(!historyReady)return false;try{fs.appendFileSync(HISTORY_FILE,JSON.stringify(record)+'\\n');historyWrites++;return true;}catch(e){historyWriteError=e.message;return false;}}
+function persistRecord(record){if(!historyReady)return false;try{fs.appendFileSync(HISTORY_FILE,JSON.stringify(record)+'\n');historyWrites++;return true;}catch(e){historyWriteError=e.message;return false;}}
 function localDate(iso){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(iso));}
 const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null,lastAssetUpdateAt:null,lastPacketAt:null,lastConnectorError:null,protocolErrors:0,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},candleHistory:{},assetQuality:{}};
 let connector=null;
@@ -121,7 +121,7 @@ const server=http.createServer((req,res)=>{
  if(req.method==='GET'&&url.pathname==='/api/state')return sendJson(res,200,{status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,lastPacketAt:state.lastPacketAt,lastConnectorError:state.lastConnectorError,protocolErrors:state.protocolErrors,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},mode:'read_only'});
  if(req.method==='GET'&&url.pathname==='/api/history'){
   const date=url.searchParams.get('date')||localDate(new Date().toISOString());
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date))return sendJson(res,400,{error:'Data inválida. Use AAAA-MM-DD.'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return sendJson(res,400,{error:'Data inválida. Use AAAA-MM-DD.'});
   const type=url.searchParams.get('type')||'all',asset=url.searchParams.get('asset')||'',limit=Math.min(1000,Math.max(1,Number(url.searchParams.get('limit')||500)));
   if(!historyReady)return sendJson(res,503,{error:'Armazenamento persistente indisponível.',detail:historyWriteError});
   const results=[];
