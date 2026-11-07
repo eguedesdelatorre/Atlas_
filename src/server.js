@@ -170,6 +170,35 @@ const server=http.createServer(async(req,res)=>{
  }
  if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const t=cookies(req.headers.cookie||'')[COOKIE_NAME];if(t)sessions.delete(sessionKey(t));saveSessions();setCookie(res,'',0);return sendJson(res,200,{ok:true});}
  if(!session){if(url.pathname==='/login.html'||url.pathname==='/login')return serveFile(res,'login.html');if(url.pathname.startsWith('/api/'))return sendJson(res,401,{error:'Não autenticado.'});res.writeHead(302,{location:'/login.html','cache-control':'no-store'});return res.end();}
+ if(req.method==='GET'&&url.pathname==='/api/v1/status'){
+  const live=state.connected&&state.candlesReceived>0;
+  return sendJson(res,200,{
+   app:'ATLAS AI',mode:'READ_ONLY',
+   broker:{name:'IQ_OPTION',configured:!!(process.env.IQ_IDENTIFIER&&process.env.IQ_PASSWORD),connected:state.connected},
+   strategy:{name:'ATLAS_AI',configured:true,active:live},
+   dataMode:live?'live':'no_live_data',
+   candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,
+   message:state.message
+  });
+ }
+ if(req.method==='GET'&&url.pathname==='/api/v1/signals'){
+  const all=[...state.signals.open,...state.signals.otc].sort((a,b)=>Date.parse(b.generatedAt)-Date.parse(a.generatedAt));
+  return sendJson(res,200,{signals:all.slice(0,500),dataMode:state.connected&&state.candlesReceived>0?'live':'no_live_data',mode:'READ_ONLY'});
+ }
+ if(req.method==='GET'&&url.pathname==='/api/v1/history'){
+  const limit=Math.min(1000,Math.max(1,Number(url.searchParams.get('limit')||200)));
+  if(!historyReady)return sendJson(res,503,{error:'Armazenamento persistente indisponível.',detail:historyWriteError});
+  const records=[];
+  try{
+   if(fs.existsSync(HISTORY_FILE)){
+    const lines=(await fs.promises.readFile(HISTORY_FILE,'utf8')).split(/\\r?\\n/).filter(Boolean);
+    for(const line of lines.slice(-Math.max(limit*4,100))){
+     try{const item=JSON.parse(line);if(item.type==='signal'||item.type==='signal_result')records.push(item);}catch{}
+    }
+   }
+  }catch(e){return sendJson(res,500,{error:'Falha ao consultar histórico.'});}
+  return sendJson(res,200,{records:records.slice(-limit),count:Math.min(records.length,limit),timeZone:'America/Sao_Paulo',historyReady:true});
+ }
  if(req.method==='GET'&&url.pathname==='/api/state')return sendJson(res,200,{status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,lastPacketAt:state.lastPacketAt,lastConnectorError:state.lastConnectorError,protocolErrors:state.protocolErrors,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},mode:'read_only'});
  if(req.method==='GET'&&url.pathname==='/api/history'){
   const date=url.searchParams.get('date')||localDate(new Date().toISOString());
