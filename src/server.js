@@ -3,6 +3,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NexusIqConnector } = require('./nexus-iq-connector');
+const { evaluateSignal } = require('./signal-engine');
 const crypto = require('node:crypto');
 const readline = require('node:readline');
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -60,7 +61,21 @@ let historyReady=false,historyWrites=0,historyWriteError=null;
 try{fs.mkdirSync(HISTORY_DIR,{recursive:true});fs.accessSync(HISTORY_DIR,fs.constants.W_OK);historyReady=true;}catch(e){historyWriteError=e.message;}
 function persistRecord(record){if(!historyReady)return false;try{fs.appendFileSync(HISTORY_FILE,JSON.stringify(record)+'\n');historyWrites++;return true;}catch(e){historyWriteError=e.message;return false;}}
 function localDate(iso){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(iso));}
-const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null,lastAssetUpdateAt:null,lastPacketAt:null,lastConnectorError:null,protocolErrors:0,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},candleHistory:{},assetQuality:{}};
+const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null,lastAssetUpdateAt:null,lastPacketAt:null,lastConnectorError:null,protocolErrors:0,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},candleHistory:{},assetQuality:{},signals:{open:[],otc:[]}};
+const signalCooldowns=new Map();
+const SIGNAL_MIN_SCORE=Number(process.env.ATLAS_MIN_SCORE||78);
+function evaluateAssetSignal(asset){
+ const id=String(asset.activeId),now=Date.now();
+ if((signalCooldowns.get(id)||0)>now)return;
+ const signal=evaluateSignal(asset,state.candleHistory[id+':M1']||[],state.candleHistory[id+':M5']||[],now);
+ if(!signal||signal.score<SIGNAL_MIN_SCORE)return;
+ const market=signal.market==='OTC'?'otc':'open';
+ if(state.signals[market].some(x=>x.id===signal.id))return;
+ signalCooldowns.set(id,now+4*60*1000);
+ state.signals[market].unshift(signal);state.signals[market]=state.signals[market].slice(0,30);
+ persistRecord({type:'signal',timestamp:signal.generatedAt,date:localDate(signal.generatedAt),asset:signal.asset,activeId:signal.activeId,timeframe:'M1',direction:signal.direction,score:signal.score,expirySeconds:signal.expirySeconds,reasons:signal.reasons});
+ console.log('[SIGNAL] confirmed',signal.market,signal.asset,signal.direction,signal.score);
+}
 let connector=null;
 
 function classifyMarket(asset) {
@@ -97,7 +112,7 @@ function marketSnapshot() {
   return {
     assets:state.assets,
     markets:{open:openAssets,otc:otcAssets,otcBest,openBinary:op.binary,openDigital:op.digital,otcBinary:ot.binary,otcDigital:ot.digital},
-    signals:{open:[],otc:[],openBinary:[],openDigital:[],otcBinary:[],otcDigital:[]},
+    signals:{open:state.signals.open,otc:state.signals.otc,openBinary:state.signals.open,openDigital:[],otcBinary:state.signals.otc,otcDigital:[]},
     marketCounts:{open:openAssets.length,otc:otcAssets.length,binary:state.assets.filter(a=>a.modalities?.includes('binary')).length,digital:state.assets.filter(a=>a.modalities?.includes('digital')).length,openBinary:op.binary.length,openDigital:op.digital.length,otcBinary:ot.binary.length,otcDigital:ot.digital.length,otcBest:otcBest.length,unclassified:state.assets.filter(a=>!a.modalities?.length).length}
   };
 }
@@ -112,8 +127,8 @@ function startFeed(){
  connector.on('protocolError',e=>{state.protocolErrors++;state.lastConnectorError=String(e?.message||e).slice(0,240);console.error('[IQ] protocol error:',state.lastConnectorError);});
  connector.on('packet',p=>{state.lastPacketAt=new Date().toISOString();});
  connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId,isOtc:a.isOtc===true||/-OTC$/i.test(a.asset)||/\\bOTC\\b/i.test(a.asset),modalities:a.modalities||[],productStatus:a.productStatus||{}}));state.lastAssetUpdateAt=new Date().toISOString();state.message='Catálogo recebido; carregando dados de todos os ativos habilitados';console.log('[IQ] assets received:',state.assets.length);});
- connector.on('candles',p=>{if(p.asset&&Array.isArray(p.candles)){state.candlesReceived+=p.candles.length;const id=String(p.activeId);state.candleHistory[id]=p.candles.slice(-150);for(const candle of p.candles){const ts=Number(candle.from??candle.at??candle.time??candle.to??Date.now()/1000);const timestamp=new Date(ts<1e12?ts*1000:ts).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle});}state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
- connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();const id=String(p.activeId);const list=state.candleHistory[id]||[];list.push(p.candle);state.candleHistory[id]=list.slice(-150);const rawTs=Number(p.candle.from??p.candle.at??p.candle.time??p.candle.to??Date.now()/1000);const timestamp=new Date(rawTs<1e12?rawTs*1000:rawTs).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle:p.candle});state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
+ connector.on('candles',p=>{if(p.asset&&Array.isArray(p.candles)){state.candlesReceived+=p.candles.length;const id=String(p.activeId),key=id+':'+p.timeframe;state.candleHistory[key]=p.candles.slice(-150).sort((a,b)=>Number(a.from??a.at??a.time??a.to??0)-Number(b.from??b.at??b.time??b.to??0));for(const candle of p.candles){const ts=Number(candle.from??candle.at??candle.time??candle.to??Date.now()/1000);const timestamp=new Date(ts<1e12?ts*1000:ts).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle});}const asset=state.assets.find(a=>String(a.activeId)===id);if(asset&&p.timeframe==='M1')evaluateAssetSignal(asset);state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
+ connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();const id=String(p.activeId),key=id+':'+p.timeframe;const list=state.candleHistory[key]||[];const stamp=Number(p.candle.from??p.candle.at??p.candle.time??p.candle.to??0);if(!list.some(c=>Number(c.from??c.at??c.time??c.to??-1)===stamp))list.push(p.candle);list.sort((a,b)=>Number(a.from??a.at??a.time??a.to??0)-Number(b.from??b.at??b.time??b.to??0));state.candleHistory[key]=list.slice(-150);const rawTs=Number(p.candle.from??p.candle.at??p.candle.time??p.candle.to??Date.now()/1000);const timestamp=new Date(rawTs<1e12?rawTs*1000:rawTs).toISOString();persistRecord({type:'candle',timestamp,date:localDate(timestamp),asset:p.asset,activeId:p.activeId,timeframe:p.timeframe,candle:p.candle});const asset=state.assets.find(a=>String(a.activeId)===id);if(asset&&p.timeframe==='M1')evaluateAssetSignal(asset);state.history={ready:historyReady,writes:historyWrites,error:historyWriteError};}});
  connector.connect().catch(()=>{});
 }
 
