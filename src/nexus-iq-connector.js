@@ -1,4 +1,7 @@
 'use strict';
+const dns = require('node:dns');
+// Railway may prefer an unreachable IPv6 route; prefer IPv4 for IQ HTTPS/WebSocket.
+try { dns.setDefaultResultOrder('ipv4first'); } catch {}
 const EventEmitter = require('node:events');
 const WebSocket = require('ws');
 
@@ -22,17 +25,27 @@ class NexusIqConnector extends EventEmitter {
   }
 
   async login() {
-    const body = new URLSearchParams({ identifier: this.email, password: this.password });
-    const response = await fetch('https://auth.iqoption.com/api/v2/login', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-        origin: 'https://iqoption.com',
-        referer: 'https://iqoption.com/'
-      },
-      body
-    });
+    const body = new URLSearchParams();
+    body.set('identifier', this.email);
+    body.set('password', this.password);
+    let response;
+    try {
+      response = await fetch('https://auth.iqoption.com/api/v2/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+          'user-agent': 'NEXUS-Cloud/1.0',
+          origin: 'https://iqoption.com',
+          referer: 'https://iqoption.com/'
+        },
+        body,
+        signal: AbortSignal.timeout(20000)
+      });
+    } catch (error) {
+      const cause = error?.cause?.code || error?.cause?.message || error?.message || 'network error';
+      throw new Error('IQ login transport failed: ' + String(cause).slice(0,160));
+    }
     if (!response.ok) throw new Error('IQ Option authentication failed (HTTP ' + response.status + ')');
     const data = await response.json();
     const ssid = data.ssid || data?.data?.ssid || data?.result?.ssid;
@@ -224,15 +237,20 @@ class NexusIqConnector extends EventEmitter {
   }
 
   reconnect() {
-    if (this.stopped) return;
+    if (this.stopped || this.reconnectTimer) return;
     const delay = Math.min(30000, 2000 * (2 ** Math.min(this.retry++, 4)));
     this.emit('reconnecting', { delay });
-    setTimeout(() => { if (!this.stopped) this.connect(); }, delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.stopped) this.connect();
+    }, delay);
   }
 
   stop() {
     this.stopped = true;
     if (this.queueTimer) clearTimeout(this.queueTimer);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.ws?.close();
   }
 }
