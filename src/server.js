@@ -32,7 +32,7 @@ function startFeed(){
  connector.on('disconnected',()=>{state.connected=false;state.message='Conexão encerrada';});
  connector.on('reconnecting',x=>{state.connected=false;state.message='Reconectando em '+x.delay+'ms';});
  connector.on('error',()=>{state.connected=false;state.message='Falha no conector; verifique autenticação, 2FA e protocolo';});
- connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId,isOtc:/-OTC$/i.test(a.asset)||/\bOTC\b/i.test(a.asset)}));});
+ connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId,isOtc:a.isOtc===true||/-OTC$/i.test(a.asset)||/\\bOTC\\b/i.test(a.asset),modalities:a.modalities||[],productStatus:a.productStatus||{}}));state.lastAssetUpdateAt=new Date().toISOString();state.message='Catálogo recebido; carregando dados de todos os ativos habilitados';});
  connector.on('candles',p=>{if(p.asset&&Array.isArray(p.candles))state.candlesReceived+=p.candles.length;});
  connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();}});
  connector.connect().catch(()=>{});
