@@ -22,7 +22,7 @@ function rsi(values,period=14){
   if(losses===0)return 100;
   const rs=(gains/period)/(losses/period);return 100-(100/(1+rs));
 }
-function evaluateSignal(asset,m1Input,m5Input,now=Date.now()){
+function evaluateSignal(asset,m1Input,m5Input,now=Date.now(),timeframe='M1'){
   const m1=normalize(m1Input),m5=normalize(m5Input);
   if(m1.length<80||m5.length<30)return null;
   const closes=m1.map(c=>c.close),trendCloses=m5.map(c=>c.close);
@@ -52,12 +52,12 @@ function evaluateSignal(asset,m1Input,m5Input,now=Date.now()){
     let score=0;const reasons=[];
     const add=(ok,points,label)=>{if(ok){score+=points;reasons.push(label);}};
     if(side==='CALL'){
-      add(bullTrend,20,'Tendência M5 alinhada');add(bullFlow,18,'Fluxo M1 comprador');
+      add(bullTrend,20,'Tendência de confirmação alinhada');add(bullFlow,18,'Fluxo comprador');
       add(bullSweep,18,'Varredura de liquidez com recuperação');add(bullBos,12,'Rompimento de estrutura');
       add(bullRejection,10,'Rejeição compradora');add(bullishOb,10,'Order Block comprador mitigado');
       add(bullishFvg,5,'Desequilíbrio/FVG comprador');add(momentum>=52&&momentum<=72,7,'RSI favorece continuação');
     }else{
-      add(bearTrend,20,'Tendência M5 alinhada');add(bearFlow,18,'Fluxo M1 vendedor');
+      add(bearTrend,20,'Tendência de confirmação alinhada');add(bearFlow,18,'Fluxo vendedor');
       add(bearSweep,18,'Varredura de liquidez com rejeição');add(bearBos,12,'Rompimento de estrutura');
       add(bearRejection,10,'Rejeição vendedora');add(bearishOb,10,'Order Block vendedor mitigado');
       add(bearishFvg,5,'Desequilíbrio/FVG vendedor');add(momentum>=28&&momentum<=48,7,'RSI favorece continuação');
@@ -72,8 +72,8 @@ function evaluateSignal(asset,m1Input,m5Input,now=Date.now()){
   return {
     id:String(asset.activeId)+'-'+chosen.direction+'-'+String(last.time||now),
     asset:asset.asset,activeId:asset.activeId,market:asset.isOtc?'OTC':'OPEN',
-    direction:chosen.direction,score:chosen.score,expirySeconds:60,timeframe:'M1',
-    confirmationTimeframe:'M5',status:'CONFIRMED',time:candleTime,
+    direction:chosen.direction,score:chosen.score,expirySeconds:timeframe==='M5'?300:60,timeframe,
+    confirmationTimeframe:timeframe==='M5'?'M1':'M5',status:'CONFIRMED',time:candleTime,
     generatedAt:new Date(now).toISOString(),galeMax:1,galeLevel:0,
     reasons:chosen.reasons,indicators:{rsi:Number(momentum.toFixed(1)),ema9:Number(fast.toPrecision(8)),ema21:Number(slow.toPrecision(8))}
   };
