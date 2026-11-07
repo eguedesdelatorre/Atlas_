@@ -2,17 +2,34 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const PORT = 3000; // Porta interna alinhada ao domínio Railway
+const { NexusIqConnector } = require('./nexus-iq-connector');
+const PORT = 3000;
+const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null};
+let connector=null;
+function startFeed(){
+ if(!state.enabled){state.message='IQ Option configurada como fonte; conexão desativada até validação em DEMO';return;}
+ if(!process.env.IQ_IDENTIFIER||!process.env.IQ_PASSWORD){state.message='Credenciais IQ Option ausentes nas variáveis privadas Railway';return;}
+ connector=new NexusIqConnector({email:process.env.IQ_IDENTIFIER,password:process.env.IQ_PASSWORD});
+ connector.on('connected',()=>{state.connected=true;state.message='Sessão conectada; aguardando candles válidos';});
+ connector.on('disconnected',()=>{state.connected=false;state.message='Conexão encerrada';});
+ connector.on('reconnecting',x=>{state.connected=false;state.message='Reconectando em '+x.delay+'ms';});
+ connector.on('error',()=>{state.connected=false;state.message='Falha no conector; verifique autenticação, 2FA e protocolo';});
+ connector.on('assets',assets=>{state.assets=assets.filter(a=>a.enabled&&!a.suspended).map(a=>({asset:a.asset,activeId:a.activeId}));});
+ connector.on('candles',p=>{if(p.asset&&Array.isArray(p.candles))state.candlesReceived+=p.candles.length;});
+ connector.on('candle',p=>{if(p.asset&&p.candle){state.candlesReceived++;state.lastCandleAt=new Date().toISOString();}});
+ connector.connect().catch(()=>{});
+}
+
 const root = path.resolve(__dirname, '..', 'public');
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
   if (req.method === 'GET' && url.pathname === '/api/health') {
     res.writeHead(200, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
-    return res.end(JSON.stringify({ok:true,app:'ATLAS AI',status:'online',feed:'not_connected',mode:'read_only'}));
+    return res.end(JSON.stringify({ok:true,app:'ATLAS AI',status:'online',feed:state,mode:'read_only'}));
   }
   if (req.method === 'GET' && url.pathname === '/api/state') {
     res.writeHead(200, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
-    return res.end(JSON.stringify({status:'online',feedConnected:false,feedMessage:'Integração com a Safirion ainda não configurada',assets:[],signals:[],mode:'read_only'}));
+    return res.end(JSON.stringify({status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',assets:state.assets,signals:[],candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,mode:'read_only'}));
   }
   const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
   const file = path.resolve(root, requested);
@@ -27,6 +44,6 @@ const server = http.createServer((req, res) => {
     res.end(data);
   });
 });
-server.listen(PORT, '0.0.0.0', () => console.log('ATLAS AI online on port ' + PORT));
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
+server.listen(PORT, '0.0.0.0', () => (console.log('ATLAS AI online on port ' + PORT),startFeed()));
+process.on('SIGTERM', () => {connector?.stop();server.close(() => process.exit(0))});
 process.on('SIGINT', () => server.close(() => process.exit(0)));
