@@ -35,7 +35,8 @@ function qualityFor(asset) {
 function marketSnapshot() {
   const openAssets=state.assets.filter(a=>classifyMarket(a)==='OPEN');
   const otcAssets=state.assets.filter(a=>classifyMarket(a)==='OTC');
-  const otcBest = otcAssets.map(a=>({...a,quality:qualityFor(a)})).filter(a=>a.quality && a.quality.score>=70).sort((a,b)=>b.quality.score-a.quality.score).slice(0,8);\n  const modality = list => ({ binary:list.filter(a=>a.modalities?.includes('binary')), digital:list.filter(a=>a.modalities?.includes('digital')), unclassified:list.filter(a=>!a.modalities?.length) });
+  const otcBest = otcAssets.map(a=>({...a,quality:qualityFor(a)})).filter(a=>a.quality && a.quality.score>=70).sort((a,b)=>b.quality.score-a.quality.score).slice(0,8);
+  const modality = list => ({ binary:list.filter(a=>a.modalities?.includes('binary')), digital:list.filter(a=>a.modalities?.includes('digital')), unclassified:list.filter(a=>!a.modalities?.length) });
   const op=modality(openAssets), ot=modality(otcAssets);
   return {
     assets:state.assets,
