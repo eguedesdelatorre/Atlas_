@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080b12"><title>Entrar · ATLAS AI</title>
+<style>
+:root{color-scheme:dark;--bg:#080b12;--panel:#101722;--line:#202c3b;--muted:#8492a6;--blue:#3987ff;--white:#edf4ff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 72% 12%,#12315a 0,transparent 36%),radial-gradient(ellipse at 12% 90%,#10213a 0,transparent 32%),var(--bg);color:var(--white);font:15px Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;display:grid;place-items:center;padding:24px}
+.shell{width:min(100%,1040px);min-height:620px;display:grid;grid-template-columns:1.05fr .95fr;border:1px solid #243248;border-radius:26px;overflow:hidden;background:#0c121d;box-shadow:0 30px 100px #0008}
+.visual{padding:48px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(145deg,#101d30dd,#0a1019f2),radial-gradient(circle at 25% 25%,#245da0,transparent 50%);position:relative;overflow:hidden}
+.visual:after{content:"";position:absolute;width:440px;height:440px;border:1px solid #3987ff30;border-radius:50%;right:-210px;bottom:-190px;box-shadow:0 0 0 45px #3987ff0a,0 0 0 95px #3987ff08}
+.brand{display:flex;align-items:center;gap:13px;font-weight:800;letter-spacing:.16em;position:relative;z-index:1}.mark{width:44px;height:44px;border:1px solid #347fe8;border-radius:14px;display:grid;place-items:center;color:#78b3ff;font-size:22px;box-shadow:0 0 30px #1b65c533}.brand small{display:block;color:#8492a6;font-size:10px;letter-spacing:.25em;margin-top:4px}
+.pitch{position:relative;z-index:1;max-width:440px}.eyebrow{color:#78b3ff;font-size:10px;font-weight:800;letter-spacing:.24em}.pitch h1{font-size:clamp(32px,4vw,48px);line-height:1.06;letter-spacing:-.04em;margin:16px 0}.pitch p{color:#9aa9bd;line-height:1.8;max-width:390px}.foot{color:#64748b;font-size:11px;letter-spacing:.08em;position:relative;z-index:1}
+.formside{padding:52px clamp(28px,5vw,64px);display:flex;flex-direction:column;justify-content:center;background:linear-gradient(160deg,#111a28,#0c121d)}
+.formside h2{font-size:27px;letter-spacing:-.03em;margin:0 0 8px}.intro{color:var(--muted);font-size:13px;margin:0 0 34px;line-height:1.6}
+label{display:block;font-size:12px;color:#c6d2e2;margin:18px 0 9px}.field{width:100%;height:50px;border:1px solid #2a394d;border-radius:12px;background:#0a111b;color:#edf4ff;padding:0 15px;outline:none;font:inherit;transition:.2s}.field:focus{border-color:#3987ff;box-shadow:0 0 0 3px #3987ff20}.field::placeholder{color:#526176}.password{position:relative}.password .field{padding-right:66px}.toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:0;color:#8eabc9;font-size:11px;cursor:pointer}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:17px 0 24px;font-size:12px;color:#9aa9bd}.remember{display:flex;align-items:center;gap:8px}.remember input{accent-color:#3987ff}.link{color:#78b3ff;text-decoration:none}.submit{width:100%;height:51px;border:0;border-radius:12px;background:linear-gradient(100deg,#2875e8,#4698ff);color:white;font-size:14px;font-weight:750;letter-spacing:.02em;cursor:pointer;box-shadow:0 10px 28px #2875e833;transition:.2s}.submit:hover{filter:brightness(1.08);transform:translateY(-1px)}.message{display:none;margin-top:16px;padding:12px;border:1px solid #624b27;background:#241d13;color:#e9c58f;border-radius:10px;font-size:12px;line-height:1.5}.security{margin-top:26px;padding-top:20px;border-top:1px solid #202c3b;color:#718198;font-size:11px;line-height:1.7;display:flex;gap:9px}.security span{color:#70aaff}
+@media(max-width:760px){body{padding:12px}.shell{grid-template-columns:1fr;min-height:auto;border-radius:20px}.visual{min-height:230px;padding:25px}.pitch{margin-top:35px}.pitch h1{font-size:30px}.pitch p{font-size:12px;margin-bottom:0}.foot{display:none}.formside{padding:34px 25px 30px}.formside h2{font-size:25px}}
+</style>
+</head>
+<body>
+<main class="shell">
+<section class="visual">
+<div class="brand"><div class="mark">A</div><div>ATLAS AI<small>INTELLIGENCE TERMINAL</small></div></div>
+<div class="pitch"><div class="eyebrow">PRECISÃO · CONTEXTO · INTELIGÊNCIA</div><h1>Uma leitura mais clara do mercado começa aqui.</h1><p>Acesse seu ambiente ATLAS e acompanhe os mercados, filtros e análises em uma interface feita para manter o foco no que importa.</p></div>
+<div class="foot">ATLAS AI · MARKET INTELLIGENCE</div>
+</section>
+<section class="formside">
+<div class="eyebrow">ÁREA RESTRITA</div><h2>Bem-vindo de volta</h2><p class="intro">Entre com seus dados para acessar o terminal ATLAS AI.</p>
+<form id="loginForm">
+<label for="email">E-mail</label><input class="field" id="email" type="email" placeholder="seu@email.com" autocomplete="username" required>
+<label for="password">Senha</label><div class="password"><input class="field" id="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" required minlength="8"><button class="toggle" type="button" id="toggle">MOSTRAR</button></div>
+<div class="row"><label class="remember"><input type="checkbox" id="remember"> Manter conectado</label><a class="link" href="#" id="forgot">Esqueci minha senha</a></div>
+<button class="submit" type="submit">Entrar no ATLAS <span aria-hidden="true">→</span></button>
+<div class="message" id="message" role="status"></div>
+</form>
+<div class="security"><span>◆</span><div>Ambiente protegido. A autenticação segura precisa estar conectada ao servidor antes de liberar o acesso. Nunca compartilhe sua senha fora desta página.</div></div>
+</section>
+</main>
+<script>
+const password=document.getElementById('password'),message=document.getElementById('message');
+document.getElementById('toggle').addEventListener('click',()=>{const show=password.type==='password';password.type=show?'text':'password';document.getElementById('toggle').textContent=show?'OCULTAR':'MOSTRAR'});
+document.getElementById('loginForm').addEventListener('submit',e=>{e.preventDefault();message.style.display='block';message.textContent='A tela está pronta, mas a autenticação ainda não foi conectada ao servidor. Nenhum acesso foi liberado.'});
+document.getElementById('forgot').addEventListener('click',e=>{e.preventDefault();message.style.display='block';message.textContent='A recuperação de senha será habilitada junto com o serviço de autenticação.'});
+</script>
+</body></html>
