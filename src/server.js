@@ -3,6 +3,36 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NexusIqConnector } = require('./nexus-iq-connector');
+const crypto = require('node:crypto');
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const COOKIE_NAME = 'atlas_session';
+const sessions = new Map();
+const loginAttempts = new Map();
+function cookies(header='') {
+  return Object.fromEntries(header.split(';').map(x=>x.trim()).filter(Boolean).map(x=>{
+    const i=x.indexOf('='); return i<0?[x,'']:[x.slice(0,i),decodeURIComponent(x.slice(i+1))];
+  }));
+}
+function equal(a,b) {
+  const aa=Buffer.from(String(a)), bb=Buffer.from(String(b));
+  return aa.length===bb.length && crypto.timingSafeEqual(aa,bb);
+}
+function currentSession(req) {
+  const token=cookies(req.headers.cookie||'')[COOKIE_NAME];
+  if(!token)return null;
+  const session=sessions.get(token);
+  if(!session||session.expires<Date.now()){sessions.delete(token);return null;}
+  session.expires=Date.now()+SESSION_TTL_MS;
+  return session;
+}
+function setCookie(res,token,maxAge) {
+  res.setHeader('Set-Cookie',COOKIE_NAME+'='+encodeURIComponent(token)+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age='+maxAge);
+}
+function sendJson(res,status,data) {
+  res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});
+  res.end(JSON.stringify(data));
+}
+
 const PORT = Number(process.env.PORT || 3000);
 const state={source:'IQ Option',connected:false,enabled:process.env.ATLAS_CONNECTOR_ENABLED==='true',message:'Aguardando configuração',assets:[],candlesReceived:0,lastCandleAt:null,lastAssetUpdateAt:null,candleHistory:{},assetQuality:{}};
 let connector=null;
