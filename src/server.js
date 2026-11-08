@@ -198,6 +198,25 @@ const server=http.createServer(async(req,res)=>{
   }catch(e){return sendJson(res,500,{error:'Falha ao consultar histórico.'});}
   return sendJson(res,200,{records:records.slice(-limit),count:Math.min(records.length,limit),timeZone:'America/Sao_Paulo',historyReady:true});
  }
+ if(req.method==='GET'&&url.pathname==='/api/stats'){
+  if(!historyReady)return sendJson(res,503,{error:'Armazenamento persistente indisponível.',detail:historyWriteError});
+  const totals={wins:0,gale1Wins:0,losses:0,draws:0};
+  try{
+   if(fs.existsSync(HISTORY_FILE)){
+    const rl=readline.createInterface({input:fs.createReadStream(HISTORY_FILE),crlfDelay:Infinity});
+    for await(const line of rl){
+     if(!line)continue;let item;try{item=JSON.parse(line)}catch{continue;}
+     if(item.type!=='signal_result')continue;
+     const outcome=String(item.outcome||'').toUpperCase();
+     if(outcome==='WIN')totals.wins++;
+     else if(outcome==='GALE1_WIN')totals.gale1Wins++;
+     else if(outcome==='LOSS')totals.losses++;
+     else if(outcome==='DRAW')totals.draws++;
+    }
+   }
+  }catch(e){return sendJson(res,500,{error:'Falha ao calcular estatísticas do histórico.'});}
+  return sendJson(res,200,{...totals,total:totals.wins+totals.gale1Wins+totals.losses+totals.draws,source:'persistent_history'});
+ }
  if(req.method==='GET'&&url.pathname==='/api/state')return sendJson(res,200,{status:'online',feedConnected:state.connected,feedMessage:state.message,source:'IQ Option',...marketSnapshot(),candlesReceived:state.candlesReceived,lastCandleAt:state.lastCandleAt,lastAssetUpdateAt:state.lastAssetUpdateAt,lastPacketAt:state.lastPacketAt,lastConnectorError:state.lastConnectorError,protocolErrors:state.protocolErrors,history:{ready:historyReady,writes:historyWrites,error:historyWriteError},mode:'read_only'});
  if(req.method==='GET'&&url.pathname==='/api/history'){
   const date=url.searchParams.get('date')||localDate(new Date().toISOString());
